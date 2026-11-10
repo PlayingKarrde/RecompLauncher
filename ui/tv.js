@@ -255,6 +255,47 @@
   // tiny copy of it.
   const TONES = {};
   const lighter = () => document.body.classList.contains('lighter');
+  // PROBE: timings of a press in Big Picture, into the launcher's trail log. Each mark forces the
+  // style and layout the step left behind, so that cost lands on the step that caused it.
+  const PERF = { t0: 0, marks: [] };
+  const perfNote = (line) => { try { invoke('perf_note', { line }).catch(() => {}); } catch (e) {} };
+  function perfMark(name) {
+    if (!PERF.t0) return;
+    const a = performance.now();
+    void document.body.offsetHeight;
+    const b = performance.now();
+    PERF.marks.push(`${name}=${(a - PERF.t0).toFixed(0)}+${(b - a).toFixed(0)}`);
+  }
+  function perfPress(b, sent, run) {
+    const lag = sent ? Date.now() - sent : -1;
+    const t0 = performance.now();
+    PERF.t0 = t0; PERF.marks = [];
+    run();
+    const js = performance.now() - t0;
+    let frames = 0, maxGap = 0, last = performance.now(), f1 = 0, f2 = 0;
+    const tick = () => {
+      const now = performance.now();
+      frames++; maxGap = Math.max(maxGap, now - last); last = now;
+      if (frames === 1) f1 = now - t0;
+      if (frames === 2) f2 = now - t0;
+      if (now - t0 < 2000) return requestAnimationFrame(tick);
+      perfNote(`press ${b} view=${TV.view} lag=${lag} js=${js.toFixed(0)} f1=${f1.toFixed(0)} f2=${f2.toFixed(0)} frames2s=${frames} maxgap=${maxGap.toFixed(0)} | ${PERF.marks.join(' ')}`);
+    };
+    requestAnimationFrame(tick);
+  }
+  function perfIdle() {
+    if (!TV.on || document.hidden) return setTimeout(perfIdle, 15000);
+    let n = 0;
+    const s0 = performance.now();
+    const k = () => {
+      n++;
+      if (performance.now() - s0 < 1000) return requestAnimationFrame(k);
+      perfNote(`idle view=${TV.view} fps=${n} nodes=${root.getElementsByTagName('*').length} focusables=${root.querySelectorAll('[data-f]').length} imgs=${root.getElementsByTagName('img').length} win=${innerWidth}x${innerHeight} dpr=${devicePixelRatio} k=${TV.k} w=${TV.w} lighter=${lighter()} anims=${document.getAnimations ? document.getAnimations().length : -1} focus=${document.hasFocus()}`);
+      setTimeout(perfIdle, 15000);
+    };
+    requestAnimationFrame(k);
+  }
+  setTimeout(perfIdle, 8000);
   function toneOf(a) {
     if (!a || !a.cover) return Promise.resolve(null);
     if (TONES[a.id]) return TONES[a.id];
@@ -303,6 +344,7 @@
     TV.toneWant = id || null;
     const paint = (tn) => {
       if (TV.toneWant !== (id || null)) return;
+      setTimeout(() => perfMark('tone'), 0);
       const light = document.body.classList.contains('light');
       if (!tn) { root.style.removeProperty('--acc'); root.style.removeProperty('--accd'); root.style.removeProperty('--accink'); return; }
       root.style.setProperty('--acc', light ? `hsl(${tn.h} ${Math.min(tn.s, 75)}% 38%)` : `hsl(${tn.h} ${tn.s}% 64%)`);
@@ -2116,8 +2158,10 @@
   function focus(el, instant) {
     if (!el) return;
     const old = focused();
+    perfMark('start');
     if (old && old !== el) old.classList.remove('f');
     el.classList.add('f');
+    perfMark('cls');
     growGrid(el);
     // Home: the backdrop and the hero follow the focused game.
     const hid = el.dataset.hero;
@@ -2127,11 +2171,12 @@
       const a = libAppOf(hid);
       settle(el, a, instant);
       const hero = $('#tv-hero', root);
-      if (hero) { hero.innerHTML = heroText(a, S.library[hid], true); hero.classList.remove('swap'); void hero.offsetWidth; hero.classList.add('swap'); fitAll(hero); }
+      if (hero) { hero.innerHTML = heroText(a, S.library[hid], true); perfMark('herohtml'); hero.classList.remove('swap'); void hero.offsetWidth; hero.classList.add('swap'); fitAll(hero); perfMark('herofit'); }
     }
     if (TV.view === 'gsettings' || TV.view === 'settings') setPanel(el);
     if (el.classList.contains('tv-fcase')) { flowLayout(el, instant); settle(el, libAppOf(el.dataset.hero), instant); return; }
     keepInView(el, instant);
+    perfMark('scroll');
   }
   // The backdrop and the colours follow the game you stop on, not each one you pass: a change fades
   // two full-screen pictures into each other and restyles the whole page, too much to start on
@@ -2161,6 +2206,7 @@
       if (TV.bgWant !== src || !bg.isConnected) return;
       for (const o of $$('img:not(.gone), .tv-glow:not(.gone)', bg)) { o.classList.add('gone'); setTimeout(() => o.remove(), 380); }
       bg.insertAdjacentHTML('afterbegin', src ? `<img src="${esc(src)}" alt="" decoding="async">` : '<div class="tv-glow"></div>');
+      perfMark('bgput');
     };
     if (!src) return put();
     preload(src);
@@ -2712,7 +2758,7 @@
   // Only presses sent to this window (the quick menu over a game gets its own).
   ((w) => (w && typeof w.listen === 'function' ? w.listen.bind(w) : T.event.listen))(T.webviewWindow && T.webviewWindow.getCurrentWebviewWindow && T.webviewWindow.getCurrentWebviewWindow())('pad', ({ payload }) => {
     nativeSeen = true;
-    if (typeof payload === 'string') pad(payload); else pad(payload.b, payload.kind);
+    if (typeof payload === 'string') pad(payload); else perfPress(payload.b, payload.t, () => pad(payload.b, payload.kind));
   });
   const STD = { 0: 'a', 1: 'b', 2: 'x', 3: 'y', 4: 'lb', 5: 'rb', 6: 'lt', 7: 'rt', 8: 'view', 9: 'menu', 10: 'ls', 11: 'rs', 12: 'up', 13: 'down', 14: 'left', 15: 'right', 16: 'guide' };
   const held = {};
@@ -2740,7 +2786,7 @@
       if (rested[rk]) { if (ax < -0.6) now.left = 1; if (ax > 0.6) now.right = 1; if (ay < -0.6) now.up = 1; if (ay > 0.6) now.down = 1; }
       const k = gp.index;
       held[k] = held[k] || {};
-      for (const b of Object.keys(now)) if (!held[k][b]) { pad(b, kind); if (['up', 'down', 'left', 'right'].includes(b)) rep = { b, t: performance.now(), n: 0 }; if (b === 'menu') menuAt[k] = performance.now(); }
+      for (const b of Object.keys(now)) if (!held[k][b]) { perfPress(b, 0, () => pad(b, kind)); if (['up', 'down', 'left', 'right'].includes(b)) rep = { b, t: performance.now(), n: 0 }; if (b === 'menu') menuAt[k] = performance.now(); }
       if (!now.menu) delete menuAt[k];
       else if (menuAt[k] && performance.now() - menuAt[k] > 900) { delete menuAt[k]; pad('menu-hold', kind); }
       if (rep.b && now[rep.b] && performance.now() - rep.t > 400 + rep.n * 120) { rep.n++; pad(rep.b, kind); }

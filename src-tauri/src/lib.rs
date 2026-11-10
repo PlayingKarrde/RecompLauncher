@@ -7424,6 +7424,12 @@ fn single_instance<R: tauri::Runtime>() -> tauri_plugin_single_instance::Builder
     b
 }
 
+/// PROBE: a timing line from the page, into the trail log.
+#[tauri::command]
+fn perf_note(line: String) {
+    trail::note(format!("perf: {}", line.chars().take(500).collect::<String>()));
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     sysenv::prepare_start(data_dir_early());
@@ -7550,6 +7556,15 @@ pub fn run() {
                 portable_remap(&dir);
             }
             trail::start(&dir);
+            // PROBE: how the web view was told to draw.
+            trail::note(format!(
+                "perf: env {}",
+                ["WEBKIT_DISABLE_DMABUF_RENDERER", "WEBKIT_DISABLE_COMPOSITING_MODE", "GDK_BACKEND", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE", "WAYLAND_DISPLAY", "DISPLAY", "GAMESCOPE_WAYLAND_DISPLAY", "SteamAppId", "GDK_SCALE"]
+                    .iter()
+                    .map(|k| format!("{k}={}", std::env::var(k).unwrap_or_else(|_| "-".into())))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ));
             update_check_last(&dir);
             // Downloads slow down while a game is running (if the player wants that).
             {
@@ -7823,7 +7838,7 @@ pub fn run() {
             game_action, setup_copy, setup_cancel, setup_input_set, setup_key_remove, setup_inputs_run, easy_setup, set_game_options, looks_info, set_look, look_picture, ui_data,
             reset_settings, tray::tray_words, ach::ach_access, ach::ach_status, ach::ach_apply, ach::ach_profile, ach::ach_games, ach::ach_board, ach::ach_game_web, ach::ach_report, ach::ach_tracker_get, ach::ach_game, ach::ach_set_disc, ach::ach_sound, ach::ach_log, ach::ach_peek, ach::ach_rule, ach::ach_reset, ach::ach_test_toast, ach::ach_toast_take, ach::ach_toast_done, cloud::account_start, cloud::account_poll, cloud::account_cancel, cloud::account_state, cloud::account_signout,
             cloud::saves_check, cloud::saves_pick, cloud::saves_cloud, download_history, report_counts, play_reports, cloud::saves_info, cloud::saves_upload_now, cloud::cloud_retry, cloud::saves_overview, cloud::saves_backup, cloud::saves_restore, cloud::saves_forget_found, cloud::saves_set_place, cloud::saves_add_place, cloud::saves_remove_place, cloud::saves_open, saves_set_root, saves_open_root, missing_files, missing_made, dll_check, dll_aside, gpu_choice, prefer_fast_gpu, copy_check, wine_tools, deck_scores, team_notes, usage::notifies, usage::notify,
-            adopt::adopt_scan, adopt::adopt_pick, adopt::adopt_add, adopt::adopt_check, adopt::set_project, usage::usage_hello, usage::usage_event, usage::data_ids, usage::reset_ids, ping::usage_open, ping::usage_mode, usage::run_report, cloud::inbox, cloud::inbox_done, cloud::betas, cloud::beta_join, cloud::beta_leave, launcher_notes, scan_info, devtools::dev_add, devtools::add_any, devtools::dev_check, devtools::dev_starter, fs_places, fs_list, fs_extract, gb_mods, gb_mod, gb_install
+            adopt::adopt_scan, adopt::adopt_pick, adopt::adopt_add, adopt::adopt_check, adopt::set_project, usage::usage_hello, usage::usage_event, usage::data_ids, usage::reset_ids, ping::usage_open, ping::usage_mode, usage::run_report, cloud::inbox, cloud::inbox_done, cloud::betas, cloud::beta_join, cloud::beta_leave, launcher_notes, scan_info, perf_note, devtools::dev_add, devtools::add_any, devtools::dev_check, devtools::dev_starter, fs_places, fs_list, fs_extract, gb_mods, gb_mod, gb_install
         ])
         .build(tauri::generate_context!())
         .expect("RecompLauncher couldn't start")

@@ -425,7 +425,9 @@ pub fn start(app: AppHandle) {
 /// The quick menu gets the controller while it's up, focused or not (Windows may not let it take
 /// focus from a game); otherwise the launcher's window, when it has focus.
 fn send(app: &AppHandle, name: &str, kind: &str) {
-    let payload = serde_json::json!({"b": name, "kind": kind});
+    // PROBE: when Rust sent the press, so the page can tell how long it took to arrive.
+    let sent = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
+    let payload = serde_json::json!({"b": name, "kind": kind, "t": sent});
     // emit_to, not a window's emit: in Tauri 2 that one reaches every window, so a press meant for
     // the launcher would also move (and press) the hidden quick menu, and the other way round.
     if app.state::<App>().overlay_open.load(Ordering::Relaxed) {
