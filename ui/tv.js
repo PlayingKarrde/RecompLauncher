@@ -2818,7 +2818,8 @@
     e.preventDefault();
     e.stopPropagation();
     root.classList.add('mouse-off');
-    press(n);
+    // PROBE: the event's own time gives how long the key waited before the page saw it.
+    perfPress('key:' + n, Date.now() - Math.max(0, performance.now() - e.timeStamp), () => press(n));
   }, true);
 
   root.addEventListener('mousemove', () => root.classList.remove('mouse-off'));
